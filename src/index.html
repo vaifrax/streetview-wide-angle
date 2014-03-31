@@ -1,0 +1,865 @@
+<!DOCTYPE HTML>
+
+<!-- code modified from demo by @thespite, using GSVPano.js for google streetview API
+     other projection modes and different interaction by Marcel Lancelle -->
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<title>WebGL Wide Angle Google Street Viewer</title>
+		<link rel="stylesheet" href="buttons.css" type="text/css" media="screen" title="no title" charset="utf-8">
+		<style type="text/css">
+	*{ 
+		margin: 0; 
+		padding: 0; 
+		//box-sizing: border-box;
+	}
+	html {
+		height: 100%;
+	}
+	body {
+		margin: 0;
+		padding: 0;
+		background: #000000;
+		color: #ffffff;
+		font-family: sans-serif;
+		font-size: 13px;
+		line-height: 20px;
+		height: 100%;
+		overflow: hidden
+	}
+	a {
+		color: #fff;
+		text-decoration: none;
+		border-bottom: 1px dotted #fff;
+	}
+	a:hover {
+		border-bottom: 1px solid #fff
+	}
+	p{
+		margin-bottom: 1em;
+	}
+	.hide{
+		opacity: 1;
+		-webkit-transition: opacity .5s ease-out;
+		-moz-transition: opacity .5s ease-out;
+		-o-transition: opacity .5s ease-out;
+	}
+	#title {
+		position: absolute;
+		top: 20px;
+		width: 300px;
+		left: 20px;
+		background-color: rgba(0,0,0,0.2);
+		border-radius: 3px;
+		padding: 10px;
+		overflow: auto;
+	}
+	#options{
+		position: absolute;
+		top: 20px;
+		width: 300px;
+		right: 20px;
+		background-color: rgba(0,0,0,0.2);
+		border-radius: 3px;
+		padding: 10px;
+		overflow: hidden;
+	}
+	h1{ 
+		font: 20px Georgia; 
+		margin: 0 0 1em 0;
+	}
+	#toggle{ 
+		position: absolute; 
+		right: 10px; 
+		top: 10px; 
+		text-align: right 
+	}
+	#map{ 
+		width: 300px; 
+		height: 200px; 
+		z-index: 100; 
+		-webkit-box-shadow: 0px 0px 3px 3px rgba( 73, 73, 73, .2 );
+		-moz-box-shadow: 0px 0px 3px 3px rgba( 73, 73, 73, .2 );
+		-o-box-shadow: 0px 0px 3px 3px rgba( 73, 73, 73, .2 );
+		box-shadow: 0px 0px 3px 3px rgba( 73, 73, 73, .2 );	
+	}
+	#pano{ 
+		position: absolute; 
+		left: 0; 
+		top: 0; 
+		right: 0; 
+		bottom: 0 
+	}
+	.button{ 
+		font-size: 11px 
+	}
+	#pano_form button{
+		float: left 
+	}
+	#map_form input{ 
+		background: rgba( 255,255,255,.5 ) url( search.png ) no-repeat 5px 50%; 
+		padding-left: 25px; 
+		width: 185px; 
+		height: 26px; 
+		border: 1px solid #444; 
+		margin-top: 2px
+	}
+	#map_form input:focus{ 
+		background-color: rgba( 255,255,255,.85 ); 
+		border: 1px solid black 
+	}
+	#map_form button{ 
+		width: 80px; 
+		float: right 
+	}
+	#preloader{
+		pointer-events: none;
+		width: 306px;
+		height: 36px;
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		margin-left: -153px;
+		margin-top: -18px;
+		background-color: rgba(255,255,255,0.8);
+		border-radius: 3px;
+		-webkit-transition: opacity 1s ease-out;
+		-moz-transition: opacity 1s ease-out;
+		-o-transition: opacity 1s ease-out;
+	}
+	#bar{
+		pointer-events: none;
+		height: 30px;
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		margin-left: -150px;
+		margin-top: -15px;
+		background-color: rgba(0,0,0,0.8);
+		border-radius: 3px;
+	}
+	.block{ 
+		position: relative;
+		line-height: 2.5em;
+		padding: 0;
+		margin: 5px 0 0 0;
+		display: block;
+	}
+	#error, #message{ line-height: 1.4em; margin-bottom: .5em }
+	.test{
+		position: absolute; left: 0; top: 0; right: 0; bottom: 0; width: 100%; height: 100%; background-color: red }
+	}
+	</style>
+	</head>
+	<body>
+
+		<div id="pano" ></div>
+		
+		<div id="title" class="hide">
+			<h1>Marcel's Wide Angle Google Street Viewer</b> | <a href="http://www.clicktorelease.com" rel="external">modified from code by Jaume Sanchez</a> <a href="http://www.twitter.com/thespite" rel="external">(@thespite)</a></h1>
+			<p>A google street panorama viewer with WebGL using <a href="https://github.com/spite/GSVPano.js" rel="external">GSVPano.js</a> and <a href="https://github.com/mrdoob/three.js" rel="external">three.js</a>. Uses Geolocation API, Fullscreen API and Pointer Lock API if available.</p>
+			<p>You'll need <a href="http://www.google.com/chrome" rel="external">Chrome</a>, <a href="http://nightly.mozilla.org/" rel="external">Firefox 8+</a>, or another browser that supports <a href="http://enable-cors.org/" rel="external">CORS</a> WebGL textures.</p>
+		</div>
+		
+		<div id="options" class="hide">
+			<h1>How to use</h1>
+			<p><b>Click and drag</b> the panorama viewer. <b>Rotate the mouse wheel</b> to zoom. Use the controls below to look for addresses (or click to set new location) and change image quality and projection mode.</p>
+
+			<!-- <a href="https://github.com/spite/GSVPano.js" rel="external" ><img style="position: absolute; top: 0; right: 0; border: 0;" src="https://a248.e.akamai.net/camo.github.com/30f550e0d38ceb6ef5b81500c64d970b7fb0f028/687474703a2f2f73332e616d617a6f6e6177732e636f6d2f6769746875622f726962626f6e732f666f726b6d655f72696768745f6f72616e67655f6666373630302e706e67" alt="Fork me on GitHub"></a> -->
+
+			<div id="map"></div>
+
+			<div class="block">
+				<form id="map_form">
+					<input type="text" name="address" id="address" />
+					<button type="submit" class="primary button" id="searchButton" >Search</button>
+				</form>
+			</div>
+			
+			<div class="block">
+				<button type="submit" id="myLocationButton" style="width: 148px" class="button">Use my location</button>
+				<button type="submit" id="fullscreenButton" style="width: 148px" class="button">Go fullscreen</button>
+			</div>
+			
+			<div class="block">
+				<b>Quality</b>
+				<form id="pano_form" style="position: absolute; right: 0; top: 0">
+					<button name="scale" style="width: 4em" id="scale1" class="left button">Low</button>
+					<button name="scale" style="width: 6em" id="scale2" class="middle button">Medium</button>
+					<button name="scale" style="width: 4em" id="scale3" class="middle button">High</button>
+					<button name="scale" style="width: 7em" id="scale4" class="right button">Massive</button>
+				</form>
+			</div>
+
+			<div class="block">
+				<b>Projection Mode</b>
+				<form id="proj_form" style="position: absolute; right: 0; top: 0">
+					<select id="pan_projection" onChange="onChangeProjection();" >
+						<option value="0">Rectilinear</option>
+						<option value="1" selected="selected">Equirectangular</option>
+						<option value="2">Cylinder</option>
+						<option value="3">Pannini</option>
+						<option value="4">Moebius</option>
+						<option value="5">Stereographic (little planet)</option>
+					</select>
+				</form>
+			</div>
+
+                        <b>Moebius Phi Max &nbsp; &nbsp;</b>
+                        <input type="range" min="2" max="180" value="60" step="2" onchange="updateValue(this.value)"/> &nbsp;
+                        <span id="range">60</span>
+                        <script type="text/javascript">
+                        </script>
+			
+			<div class="block" id="status" >
+				<div id="message" ></div>
+				<div id="error" ></div>
+			</div>
+			
+		</div>
+		
+		<div id="preloader" >
+			<div id="bar" ></div>
+		</div>
+
+		<script type="text/javascript" src="js/GSVPano.min.js"></script>
+		<script type="text/javascript" src="js/Tween.js"></script>
+		<script type="text/javascript" src="js/Three.js"></script>
+		<script type="text/javascript" src="js/RequestAnimationFrame.js"></script>
+		<script type="text/javascript" src="http://maps.google.com/maps/api/js?sensor=false"></script>
+
+
+<script id="vertexShader" type="x-shader/x-vertex">
+void main() {
+	gl_Position = vec4( position, 1.0 );
+}
+</script>
+<script id="fragmentShader" type="x-shader/x-fragment">
+//#version 120
+
+const float PI = 3.14159265;
+uniform int projMode;
+uniform float phiMax;
+//uniform float panini_compression; // compression parameter: distance from center of cylinder
+const float panini_compression = 1.0;
+
+#ifdef GL_ES
+precision highp float;
+#endif
+uniform vec2 resolution;
+uniform float stime;
+uniform float camAngle1;
+uniform float camAngle2;
+uniform float camHFoV; // horizontal field of view in radians
+//uniform samplerCube cubeTex;
+uniform sampler2D tex;
+
+// p and dir must set one (the same) component to zero, dir must then be normalized
+float intersectRayCylinder(float radius, vec3 p, vec3 dir) {
+//dir.y = 0;
+//p.y = 0;
+   float b = dot(p, dir);
+   float c = dot(p, p) - radius*radius;
+   if (c > 0.0 && b > 0.0) return -1.0;
+   float discr = b*b - c;
+   if (discr < 0.0) return -1.0;
+//   float t = -b -sqrt(discr);
+   float t = -b + sqrt(discr);
+   //if (t < 0.0) t = 0.0; // if ray started inside sphere clamp to 0
+   return t;
+}
+
+float mySmoothstep(float edge0, float edge1, float x) {
+	float t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+
+void main(void) {
+	//vec2 p = -1.0 + 2.0 * gl_FragCoord.xy / resolution.xy;
+	vec2 p = gl_FragCoord.xy / resolution.xy - 0.5;
+	//vec2 p = gl_FragCoord.xy / resolution.x;
+	p.y *= resolution.y/resolution.x;
+
+	vec3 resDir; // 3D lookup vector
+
+	float cos1 = cos(camAngle1);
+	float sin1 = sin(camAngle1);
+	mat3 rot1;
+	rot1[0].x = cos1;
+	rot1[0].y = 0.0;
+	rot1[0].z = sin1;
+	rot1[1].x = 0.0;
+	rot1[1].y = 1.0;
+	rot1[1].z = 0.0;
+	rot1[2].x = -sin1;
+	rot1[2].y = 0.0;
+	rot1[2].z = cos1;
+
+	float cos2 = cos(camAngle2);
+	float sin2 = sin(camAngle2);
+	mat3 rot2;
+	rot2[0].x = 1.0;
+	rot2[0].y = 0.0;
+	rot2[0].z = 0.0;
+	rot2[1].x = 0.0;
+	rot2[1].y = cos2;
+	rot2[1].z = sin2;
+	rot2[2].x = 0.0;
+	rot2[2].y = -sin2;
+	rot2[2].z = cos2;
+
+	mat3 rot = rot1 * rot2;
+
+	if (projMode == 0) {
+		// rectilinear
+		float l = 2.0*tan(0.5*camHFoV);
+		vec3 res = vec3(p.x*l, p.y*l , -1.0);
+		resDir = rot*res;
+	} else if (projMode == 1) {
+		// equirectangular
+		float a1 = -p.x*camHFoV;
+		float a2 = -p.y*camHFoV;
+		rot = rot1 * (-rot2);
+		resDir = rot * vec3(cos(a2)*sin(a1), sin(a2), cos(a2)*cos(a1));
+	} else if (projMode == 5)  {
+		// stereographic (little planet)
+		float h = p.x*camHFoV*2.7;// + camAngle1;
+		float v = p.y*camHFoV*2.7;// + camAngle2;
+		vec3 res = vec3(2.0*h, -1.0+h*h+v*v, -2.0*v)/(1.0+h*h+v*v);
+		resDir = rot*res;
+	} else if (projMode == 2)  {
+		// cylinder
+		//float h = p.x*camHFoV + camAngle1 + 0.5*PI;
+		//float v = p.y*camHFoV + camAngle2;
+		float v = p.y*camHFoV;
+		float h = p.x*camHFoV + 0.5*PI;
+		vec3 res = vec3(-cos(h), v, -sin(h));
+		resDir = rot * res;
+	} else if (projMode == 3)  {
+		// Pannini
+		float l = 2.0 *  sin(0.5*camHFoV) / (cos(0.5*camHFoV) + panini_compression);
+		vec3 vViewVec = vec3(p.x*l, p.y*l, -1.0);
+
+		vec3 rayStartPos = vec3(0.0, 0.0, panini_compression);
+		vec3 rayDir = vViewVec;
+		vec3 rayDirP = vec3(rayDir.x, 0, rayDir.z);
+
+		float lm=intersectRayCylinder(1.0, rayStartPos, normalize(rayDirP));
+		if (lm > 0.0) {
+			vec3 res = rayStartPos + lm*rayDir/length(rayDirP);
+			resDir = rot*res;
+		} else {
+			resDir = vec3(1, 0, 0);
+		}
+	} else if (projMode == 4) {
+        // re-scale the final image for the Moebius projection method
+        {
+            float rho_compression;
+            //float phi_max_rad = 0.1*PI;
+            float phi_max_rad = (PI*(phiMax)/180.0);
+            if (camHFoV<=phi_max_rad){
+                    rho_compression = 1.0;
+            } else {
+                    rho_compression = phi_max_rad/camHFoV;
+            }
+            p.x *= rho_compression;
+            p.y *= rho_compression;
+
+        }
+
+        float l = 2.0*tan(0.5*camHFoV);
+        vec3 res = vec3(p.x*l, p.y*l , -1.0);
+		res = normalize(res);
+
+		// Stereographic projection
+		vec2 ster; 
+		ster.x = 2.0*res.x/(-res.z+1.0);
+		ster.y = 2.0*res.y/(-res.z+1.0);
+
+		// Moebius shrinking on the complex plane
+                float rho_compression;
+                float phi_max_rad = (PI*(phiMax)/180.0);
+                if (camHFoV<=phi_max_rad){
+                        rho_compression = 1.0;
+                } else {
+                        rho_compression = phi_max_rad/camHFoV;
+                }
+		ster.x /= rho_compression;
+		ster.y /= rho_compression;
+		
+		// map points back to the sphere
+                res.x = (4.0*ster.x)/(ster.x*ster.x+ster.y*ster.y+4.0);
+                res.y = (4.0*ster.y)/(ster.x*ster.x+ster.y*ster.y+4.0);
+                res.z = (ster.x*ster.x+ster.y*ster.y-4.0)/(ster.x*ster.x+ster.y*ster.y+4.0);
+
+		// rotate result
+		resDir = rot*res;
+	}
+
+	// from 3D lookup vector, now compute texture coordinate, as the texture is not a cube map but a 2D equirect. image
+
+	resDir = normalize(resDir);
+	vec2 ang;
+	ang.x = -atan(resDir.z, resDir.x)/(2.0*PI) + 0.5;
+	ang.y = acos(-resDir.y)/PI;
+
+	gl_FragColor=texture2D(tex, ang);
+}
+</script>
+
+
+		<script type="text/javascript">
+
+		TWEEN.start();
+		
+		var map, canvas, ctx;
+		var marker = null;
+		var container, mesh, renderer, camera, uniforms;
+
+		var fov = 70;
+		var lat = 0, lon = 0;
+		var zoom;
+		var geocoder;
+		var error;
+		var message;
+		var activeLocation = null;
+		var preloader = document.getElementById( 'preloader' );
+		var bar = document.getElementById( 'bar' );
+		var scaleButtons = [];
+		var cd = new Date();
+		var time = cd.getTime();
+		var position = { x: 0, y: 0 };
+		var loader = new GSVPANO.PanoLoader();
+
+		function setProgress( progress ) {
+			bar.style.width = ( preloader.clientWidth - 6 ) * progress / 100 + 'px';
+		}
+
+		function showProgress( show ) {
+			preloader.style.opacity = ( show == true )?1:0;
+			preloader.style.display = ( show == true )?'block':'none';
+		}
+
+		function setZoom( z ) {
+			zoom = z;
+			loader.setZoom( z );
+			for( var j = 0; j < scaleButtons.length; j++ ) {
+				scaleButtons[ j ].className = scaleButtons[ j ].className.replace( 'active', '' );
+				if( z == ( j + 1 ) ) scaleButtons[ j ].className += ' active';
+			}
+			if( activeLocation ) loader.load( activeLocation );
+		}
+
+		function geoSuccess( position ) {
+		
+			var currentLocation = new google.maps.LatLng( position.coords.latitude, position.coords.longitude );
+			map.panTo( currentLocation );
+			addMarker( currentLocation ); // move to position (thanks @theCole!)
+
+		}
+
+		function geoError( message ) {
+			showError( message );
+		}
+		
+		function initialize() {
+			var locations = [
+				{ lat: -43.563725268265436, lng: 172.75005340576172 },
+				{ lat: -43.8074954782013, lng: 172.96600341796875 },
+				{ lat: -35.258305603213884, lng: 174.1318416595459 },
+				{ lat: -34.433531562165406, lng: 172.68396377563477 },
+				{ lat: 36.0668274, lng: 112.13624149999998 },
+				{ lat: -23.4428526933491, lng: 151.9068431854248 },
+				{ lat: 1.289025272199626, lng: 103.85676383972168 },
+				{ lat: 1.2862150269521264, lng: 103.858802318573 },
+				{ lat: 1.350978581236551, lng: 103.79063129425049 },
+				{ lat: 47.327973965166144, lng: 8.573412895202637 }
+			];
+
+			var pos;
+			if( window.location.hash ) {
+				parts = window.location.hash.substr( 1 ).split( ',' );
+				pos = { lat: parts[ 0 ], lng: parts[ 1 ] };
+			} else {
+				pos = locations[ Math.floor( Math.random() * locations.length ) ];
+			}
+			var myLatlng = new google.maps.LatLng( pos.lat, pos.lng );
+				
+			var links = document.querySelectorAll( 'a[rel=external]' );
+			for( var j = 0; j < links.length; j++ ) {
+				var a = links[ j ];
+				a.addEventListener( 'click', function( e ) {
+					window.open( this.href, '_blank' );
+					e.preventDefault();
+				}, false );
+			}
+			
+			for( var j = 1; j < 5; j++ ) {
+				var el = document.getElementById( 'scale' + j );
+				scaleButtons.push( el );
+				( function( z ) { el.addEventListener( 'click', function( e ) {
+					e.preventDefault();
+					setZoom( z ); 
+				}, false ); } )( j );
+			}
+			
+			canvas = document.createElement( 'canvas' );
+			ctx = canvas.getContext( '2d' );
+			
+			container = document.getElementById( 'pano' );
+			
+			//camera = new THREE.Camera();
+			camera = new THREE.PerspectiveCamera( fov, window.innerWidth / window.innerHeight, 1, 1100 );
+			camera.target = new THREE.Vector3( 0, 0, 0 );
+camera.position.z = 10;
+			
+			scene = new THREE.Scene();
+			scene.add( camera );
+
+			try {
+				var isWebGL = !!window.WebGLRenderingContext && !!document.createElement('canvas').getContext('experimental-webgl');
+			}catch(e){
+				
+			}
+			
+			renderer = new THREE.WebGLRenderer();
+			renderer.autoClearColor = false;
+			renderer.setSize( window.innerWidth, window.innerHeight );
+
+			uniforms = {
+				stime: { type: "f", value: 1.0 },
+				resolution: { type: "v2", value: new THREE.Vector2() },
+				//cubeTex: { type: "t", value: THREE.ImageUtils.loadTexture( "placeholder.jpg" ) }
+				//cubeTex: { type: "t", value: THREE.ImageUtils.loadTextureCube( [ "placeholder.png","placeholder.png","placeholder.png",
+				//																"placeholder.png","placeholder.png","placeholder.png"] ) },
+				tex: { type: "t", value: THREE.ImageUtils.loadTexture( "placeholder.png" ) },
+				camAngle1: { type: "f", value: 0.0 }, // camera pitch and yaw
+				camAngle2: { type: "f", value: 0.0 },
+				camHFoV: { type: "f", value: 70*Math.PI/180 }, // horizontal field of view in radians
+                                projMode: { type: "i", value: 1 }, // projection mode
+                                phiMax: { type: "f", value: 60.0 } // phi Max used for Moebius projection
+ 			};
+			onChangeProjection(); // update in case dropdown was already changed before reloading the page
+
+			material = new THREE.ShaderMaterial( {
+				uniforms: uniforms,
+				vertexShader: document.getElementById( 'vertexShader' ).textContent,
+				fragmentShader: document.getElementById( 'fragmentShader' ).textContent
+			} );
+			mesh = new THREE.Mesh( new THREE.PlaneGeometry( 2, 2 ), material );
+
+//			mesh = new THREE.Mesh( new THREE.SphereGeometry( 500, 60, 40 ), new THREE.MeshBasicMaterial( { map: THREE.ImageUtils.loadTexture( 'placeholder.jpg' ) } ) );
+			scene.add( mesh );
+			
+			container.appendChild( renderer.domElement );
+			
+			var myOptions = {
+				zoom: 14,
+				center: myLatlng,
+				mapTypeId: google.maps.MapTypeId.ROADMAP,
+				streetViewControl: false
+			}
+			map = new google.maps.Map(document.getElementById("map"), myOptions);
+			google.maps.event.addListener(map, 'click', function(event) {
+				addMarker(event.latLng);
+			});
+			
+			geocoder = new google.maps.Geocoder();
+			
+			container.addEventListener( 'mousedown', onContainerMouseDown, false );
+			container.addEventListener( 'mousemove', onContainerMouseMove, false );
+			container.addEventListener( 'mouseup', onContainerMouseUp, false );
+			container.addEventListener( 'mousewheel', onContainerMouseWheel, false );
+			container.addEventListener( 'DOMMouseScroll', onContainerMouseWheel, false); 
+			window.addEventListener( 'resize', onWindowResized, false );
+			
+			onWindowResized( null );
+			
+			var el = document.getElementById( 'myLocationButton' );
+			el.addEventListener( 'click', function( event ) {
+				event.preventDefault();
+//				navigator.geolocation.getCurrentPosition( geoSuccess, geoError );
+			}, false );
+			
+//			navigator.pointer = navigator.pointer || navigator.webkitPointer || navigator.mozPointer;  
+
+			var el = document.getElementById( 'fullscreenButton' );
+			if( el ) {
+				el.addEventListener( 'click', function( e ) {
+					container.addEventListener( 'webkitfullscreenchange', function(e) {
+//						if( navigator.pointer ) {
+//							navigator.pointer.lock( container );
+//						}
+					}, false );
+					document.addEventListener( 'mozfullscreenchange', function(e) {
+						if (document.mozFullScreen && document.mozFullScreenElement === container && container.mozRequestPointerLock) {
+							container.mozRequestPointerLock();
+						}
+					}, false );
+					if( container.webkitRequestFullScreen ) container.webkitRequestFullScreen();
+					if( container.mozRequestFullScreen ) container.mozRequestFullScreen();
+					e.preventDefault();
+				}, false );
+			}
+			
+			el = document.getElementById( 'searchButton' );
+			el.addEventListener( 'click', function( event ) {
+				event.preventDefault();
+				findAddress( document.getElementById("address").value );
+			}, false );
+			
+			errorDiv = document.getElementById( 'error' );
+			messageDiv = document.getElementById( 'message' );
+			
+			showMessage( 'Ready. <b>Click a street in the map.</b>' );
+			
+			loader.onProgress = function( p ) {
+				setProgress( p );
+			};
+			
+			loader.onPanoramaData = function( result ) {
+				showProgress( true );
+				showMessage( 'Panorama OK. Loading and composing tiles...' );
+			}
+			
+			loader.onNoPanoramaData = function( status ) {
+				showError("Could not retrieve panorama for the following reason: " + status);
+			}
+			
+			loader.onPanoramaLoad = function() {
+				activeLocation = this.location;
+				//mesh.material.uniforms.cubeTex = new THREE.Texture( this.canvas ); 
+//mesh.material.uniforms.tex.value = THREE.ImageUtils.loadTexture("placeholder.jpg");
+				mesh.material.uniforms.tex.value = new THREE.Texture( this.canvas ); 
+				mesh.material.uniforms.tex.value.needsUpdate = true; 
+				mesh.material.uniforms.tex.needsUpdate = true; 
+				mesh.material.uniforms.needsUpdate = true; 
+				mesh.material.needsUpdate = true; 
+//mesh.material.uniforms.cubeTex.value = THREE.ImageUtils.loadTextureCube( [ "placeholder.jpg","placeholder.jpg","placeholder.jpg",
+//																				"placeholder.jpg","placeholder.jpg","placeholder.jpg"] , {}, function(){mesh.material.needsUpdate = true;});
+
+				mesh.material.needsUpdate = true;
+				showMessage( 'Panorama tiles loaded.<br/>The images are ' + this.copyright );
+				showProgress( false );
+			};
+
+			setZoom( 3 );
+			addMarker( myLatlng ); // initial position (thanks @mrdoob!)
+			animate();
+		}
+		
+		window.addEventListener( 'load', initialize, false );
+
+		function findAddress( address ) {
+		
+			showMessage( 'Getting coordinates...' );
+			geocoder.geocode( { 'address': address}, function(results, status) {
+				if (status == google.maps.GeocoderStatus.OK) {
+					map.setCenter(results[0].geometry.location);
+					showMessage( 'Address found.' );
+					addMarker( results[0].geometry.location ); // move to position (thanks @jocabola!)
+				} else {
+					showError("Geocode was not successful for the following reason: " + status);
+					showProgress( false );
+				}
+			});
+		}
+		
+		function showError( message ) {
+			errorDiv.innerHTML = message;
+		}
+		
+		function showMessage( message ) {
+			showError('');
+			messageDiv.innerHTML = message;
+		}
+		
+		function onWindowResized( event ) {
+			uniforms.resolution.value.x = container.clientWidth;//window.innerWidth;
+			uniforms.resolution.value.y = container.clientHeight;//window.innerHeight;
+			//renderer.setSize( window.innerWidth, window.innerHeight );
+			renderer.setSize( container.clientWidth, container.clientHeight );
+//			camera = new THREE.PerspectiveCamera( fov, container.clientWidth / container.clientHeight, 1, 1100 );
+//			camera.lookAt(new THREE.Vector3(0, 0, 0));
+			//camera.projectionMatrix = THREE.Matrix4.makePerspective( fov, container.clientWidth / container.clientHeight, 1, 1100 );
+		}
+		
+		var isUserInteracting = false;
+		var onPointerDownPointerX, onPointerDownPointerY, onPointerDownLon, onPointerDownLat;
+		var lastPointerX, lastPointerY;
+
+		function onContainerMouseDown( event ) {
+			
+			event.preventDefault();
+
+			isUserInteracting = true;
+			var el = document.querySelectorAll( '.hide' );
+			for( var j = 0; j < el.length; j++ ) {
+				el[ j ].style.opacity = 0;
+				el[ j ].style.pointerEvents = 'none';
+			}
+			
+			onPointerDownPointerX = event.clientX;
+			onPointerDownPointerY = event.clientY;
+
+			lastPointerX = event.clientX;
+			lastPointerY = event.clientY;
+
+			onPointerDownLon = lon;
+			onPointerDownLat = lat;
+			
+		}
+		
+		function onContainerMouseMove( event ) {
+
+			event.preventDefault();
+			
+			//lookSpeed = .02;
+			var f = 0.0001*fov;
+			if( navigator.pointer && navigator.pointer.isLocked ) {
+				uniforms.camAngle1.value -= event.webkitMovementX * f;
+				uniforms.camAngle2.value += event.webkitMovementY * f;
+			} else if ( document.mozPointerLockElement == container ){
+				if( Math.abs( event.mozMovementX ) < 100 || Math.abs( event.mozMovementY ) < 100 ) { 
+					uniforms.camAngle1.value += event.mozMovementX * f;
+					uniforms.camAngle2.value -= event.mozMovementY * f;
+				}
+			} else {
+				if ( isUserInteracting ) {
+					//var dx = ( onPointerDownPointerX - event.clientX ) * f;
+					//var dy = ( event.clientY - onPointerDownPointerY ) * f;
+					var dx = event.clientX - lastPointerX;
+					var dy = event.clientY - lastPointerY;
+					uniforms.camAngle1.value -= f*dx;
+					uniforms.camAngle2.value += f*dy; // + onPointerDownLat;
+					if (uniforms.camAngle1.value > Math.PI) uniforms.camAngle1.value -= 2*Math.PI;
+					if (uniforms.camAngle1.value <-Math.PI) uniforms.camAngle1.value += 2*Math.PI;
+					if (uniforms.camAngle2.value > Math.PI) uniforms.camAngle2.value -= 2*Math.PI;
+					if (uniforms.camAngle2.value <-Math.PI) uniforms.camAngle2.value += 2*Math.PI;
+					lastPointerX = event.clientX;
+					lastPointerY = event.clientY;
+				}
+			}
+
+		}
+		
+		var nfov = 70; // new hfov
+		function onContainerMouseWheel( event ) {
+			
+			event = event ? event : window.event;
+			//var nfov = fov - ( event.detail ? event.detail * -5 : event.wheelDelta / 8 );
+			nfov *= Math.pow(1.06, ( event.detail ? event.detail : event.wheelDelta / -70 ));
+			if (nfov < 5) nfov = 5;
+			if (nfov > 359.5) nfov = 359.5;
+			if (uniforms.projMode.value == 0) {
+				if (nfov > 172) nfov = 172;
+			}
+
+			var tween = new TWEEN
+				.Tween( window )
+				.to( { fov: nfov }, 200 )
+				//.easing(TWEEN.Easing.Cubic.EaseInOut)
+				.easing(TWEEN.Easing.Cubic.EaseOut)
+				.onUpdate( function() { 
+					//camera.projectionMatrix = THREE.Matrix4.makePerspective( fov, container.clientWidth / container.clientHeight, 1, 1100 );
+					uniforms.camHFoV.value = fov*Math.PI/180;
+					// todo: zoom towards current mouse pointer
+				} )
+				.start();
+
+		}
+
+		function onChangeProjection() {
+			uniforms.projMode.value = document.getElementById("pan_projection").value;
+			if (uniforms.projMode.value == 5) { // stereographic
+				fov = 240;
+				nfov = 240;
+				uniforms.camHFoV.value = fov*Math.PI/180;
+				uniforms.camAngle1.value = 0;
+				uniforms.camAngle2.value = 0;
+			}
+			if (uniforms.projMode.value == 0) { // rectilinear
+				if (nfov > 172) nfov = 172;
+			}
+                }
+
+                function updateValue(newValue) {
+                                document.getElementById("range").innerHTML=newValue;
+                                uniforms.phiMax.value=newValue;
+                }
+
+		function update() {
+		}
+		
+		function onContainerMouseUp( event ) {
+
+			event.preventDefault();
+			isUserInteracting = false;
+			var el = document.querySelectorAll( '.hide' );
+			for( var j = 0; j < el.length; j++ ) {
+				el[ j ].style.opacity = 1;
+				el[ j ].style.pointerEvents = 'auto';
+			}
+
+		}
+		
+		function addMarker(location) {
+			if( marker ) marker.setMap( null );
+			marker = new google.maps.Marker({
+				position: location,
+				map: map
+			});
+			marker.setMap( map ); 
+			showMessage( 'Loading panorama for zoom ' + zoom + '...' );
+			loader.load( location );
+		}
+		
+		var panoramas = [];
+		var circle = null;
+		var copyright;
+
+		function animate() {
+
+			requestAnimationFrame( animate );
+			render();
+
+		}
+
+		var ellapsedTime;
+		
+		function render() {
+/*
+			var cd = new Date();
+			ctime = cd.getTime();
+			
+			ellapsedTime = ( ctime - time );
+			ellapsedFactor = ellapsedTime / 16;
+
+			var olon = lon, olat = lat;
+			var s = .15 * ellapsedFactor;
+			lon = lon + ( position.x - olon ) * s;
+			lat = lat + ( position.y - olat ) * s;
+				
+			lat = Math.max( - 85, Math.min( 85, lat ) );
+			phi = ( 90 - lat ) * Math.PI / 180;
+			theta = lon * Math.PI / 180;
+
+			//camera.lookAt.x = 500 * Math.sin( phi ) * Math.cos( theta );
+			//camera.lookAt.y = 500 * Math.cos( phi );
+			//camera.lookAt.z = 500 * Math.sin( phi ) * Math.sin( theta );
+			//camera.lookAt( camera.target );
+*/			
+			uniforms.stime.value += 0.05;
+
+			renderer.render( scene, camera );
+			
+//			time = ctime;
+
+		}
+		
+		</script>
+				
+	
+	</body>
+</html>
