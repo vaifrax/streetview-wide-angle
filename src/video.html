@@ -1,0 +1,549 @@
+<!doctype html>
+
+<!-- code modified from demo by @thespite, using GSVPano.js for google streetview API
+     other projection modes and different interaction by Marcel Lancelle -->
+
+<html lang="en">
+	<head>
+		<title>WebGL Wide Angle Google Street Viewer</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link rel="stylesheet" href="buttons.css" type="text/css" media="screen" title="no title" charset="utf-8">
+		<style>
+			html {
+				height: 100%;
+			}
+			body {
+				margin: 0;
+				padding: 0;
+				background: #000000;
+				color: #ffffff;
+				font-family: sans-serif;
+				font-size: 13px;
+				line-height: 20px;
+				height: 100%;
+				overflow: hidden
+			}
+			#container {
+				position: absolute;
+				left: 0;
+				top: 0;
+				right: 0;
+				bottom: 0;
+			}
+			a {
+				color: #fff;
+				text-decoration: none;
+				border-bottom: 1px dotted #fff;
+			}
+			a:hover {
+				border-bottom: 1px solid #fff
+			}
+			h1{ 
+				font: 24px Georgia; 
+				font-weight: bold;
+				margin: 0 0 .5em 0;
+			}
+			h2{ 
+				font: 16px Georgia; 
+				margin: 0 0 .5em 0;
+			}
+			.hide{
+				opacity: 1;
+				-webkit-transition: opacity .5s ease-out;
+				-moz-transition: opacity .5s ease-out;
+				-o-transition: opacity .5s ease-out;
+			}
+			#title {
+				position: absolute;
+				top: 20px;
+				width: 300px;
+				left: 20px;
+				background-color: rgba(0,0,0,0.2);
+				border-radius: 3px;
+				padding: 10px;
+				overflow: auto;
+			}
+			#options{
+				position: absolute;
+				top: 20px;
+				width: 300px;
+				right: 20px;
+				background-color: rgba(0,0,0,0.2);
+				border-radius: 3px;
+				padding: 10px;
+				overflow: hidden;
+			}
+			.button{ 
+				font-size: 11px 
+			}
+			#pano_form button{
+				float: left 
+			}
+			.block{ 
+				position: relative;
+				line-height: 2.5em;
+				padding: 0;
+				margin: 5px 0 0 0;
+				display: block;
+			}
+			#error, #message{ line-height: 1.4em; margin-bottom: .5em }
+		</style>
+	</head>
+
+
+	<body>
+
+		<div id="container"></div>
+		
+		<div id="options" class="hide">
+				
+			<div class="block">
+				<button type="submit" id="myLocationButton" style="width: 148px" class="button">Use my location</button>
+				<button type="submit" id="fullscreenButton" style="width: 148px" class="button">Go fullscreen</button>
+			</div>
+			
+			<div class="block">
+				<b>Quality</b>
+				<form id="pano_form" style="position: absolute; right: 0; top: 0">
+					<button name="scale" style="width: 4em" id="scale1" class="left button">Low</button>
+					<button name="scale" style="width: 6em" id="scale2" class="middle button">Medium</button>
+					<button name="scale" style="width: 4em" id="scale3" class="middle button">High</button>
+					<button name="scale" style="width: 7em" id="scale4" class="right button">Massive</button>
+				</form>
+			</div>
+
+			<div class="block">
+				<b>Projection Mode</b>
+				<form id="proj_form" style="position: absolute; right: 0; top: 0">
+					<select id="pan_projection" onChange="onChangeProjection();" >
+						<option value="0">Rectilinear</option>
+						<option value="1" selected="selected">Equirectangular</option>
+						<option value="2">Cylinder</option>
+						<option value="3">Pannini</option>
+						<option value="4">Moebius</option>
+						<option value="5">Stereographic (little planet)</option>
+					</select>
+				</form>
+			</div>
+
+            <div class="block">
+				<b>Moebius Phi Max &nbsp; &nbsp;</b>
+				<input type="range" min="2" max="180" value="60" step="2" onchange="onUpdateMoebPhiMax(this.value)"/> &nbsp;
+				<span id="range">60</span>
+			</div>
+			
+			<div class="block" id="status" >
+				<div id="message" ></div>
+				<div id="error" ></div>
+			</div>
+			
+		</div>
+		
+		<script src="js/three.min.js"></script>
+		
+		<script type="x-shader/x-vertex" id="vertexShader">
+		
+void main() {
+	gl_Position = vec4( position, 1.0 );
+}
+
+		</script>
+		
+		<script type="x-shader/x-vertex" id="fragmentShader">
+		
+const float PI = 3.14159265;
+uniform int projMode;
+uniform float phiMax;
+//uniform float panini_compression; // compression parameter: distance from center of cylinder
+const float panini_compression = 1.0;
+
+#ifdef GL_ES
+precision highp float;
+#endif
+uniform vec2 resolution;
+uniform float camAngle1;
+uniform float camAngle2;
+uniform float camHFoV; // horizontal field of view in radians
+uniform sampler2D tex;
+
+// p and dir must set one (the same) component to zero, dir must then be normalized
+float intersectRayCylinder(float radius, vec3 p, vec3 dir) {
+//dir.y = 0;
+//p.y = 0;
+   float b = dot(p, dir);
+   float c = dot(p, p) - radius*radius;
+   if (c > 0.0 && b > 0.0) return -1.0;
+   float discr = b*b - c;
+   if (discr < 0.0) return -1.0;
+//   float t = -b -sqrt(discr);
+   float t = -b + sqrt(discr);
+   //if (t < 0.0) t = 0.0; // if ray started inside sphere clamp to 0
+   return t;
+}
+
+float mySmoothstep(float edge0, float edge1, float x) {
+	float t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+
+void main(void) {
+	//vec2 p = -1.0 + 2.0 * gl_FragCoord.xy / resolution.xy;
+	vec2 p = gl_FragCoord.xy / resolution.xy - 0.5;
+	//vec2 p = gl_FragCoord.xy / resolution.x;
+	p.y *= resolution.y/resolution.x;
+
+	vec3 resDir; // 3D lookup vector
+
+	float cos1 = cos(camAngle1);
+	float sin1 = sin(camAngle1);
+	mat3 rot1;
+	rot1[0].x = cos1;
+	rot1[0].y = 0.0;
+	rot1[0].z = sin1;
+	rot1[1].x = 0.0;
+	rot1[1].y = 1.0;
+	rot1[1].z = 0.0;
+	rot1[2].x = -sin1;
+	rot1[2].y = 0.0;
+	rot1[2].z = cos1;
+
+	float cos2 = cos(camAngle2);
+	float sin2 = sin(camAngle2);
+	mat3 rot2;
+	rot2[0].x = 1.0;
+	rot2[0].y = 0.0;
+	rot2[0].z = 0.0;
+	rot2[1].x = 0.0;
+	rot2[1].y = cos2;
+	rot2[1].z = sin2;
+	rot2[2].x = 0.0;
+	rot2[2].y = -sin2;
+	rot2[2].z = cos2;
+
+	mat3 rot = rot1 * rot2;
+
+	if (projMode == 0) {
+		// rectilinear
+		float l = 2.0*tan(0.5*camHFoV);
+		vec3 res = vec3(p.x*l, p.y*l , -1.0);
+		resDir = rot*res;
+	} else if (projMode == 1) {
+		// equirectangular
+		float a1 = -p.x*camHFoV;
+		float a2 = -p.y*camHFoV;
+		rot = rot1 * (-rot2);
+		resDir = rot * vec3(cos(a2)*sin(a1), sin(a2), cos(a2)*cos(a1));
+	} else if (projMode == 5)  {
+		// stereographic (little planet)
+		float h = p.x*camHFoV*2.7;// + camAngle1;
+		float v = p.y*camHFoV*2.7;// + camAngle2;
+		vec3 res = vec3(2.0*h, -1.0+h*h+v*v, -2.0*v)/(1.0+h*h+v*v);
+		resDir = rot*res;
+	} else if (projMode == 2)  {
+		// cylinder
+		//float h = p.x*camHFoV + camAngle1 + 0.5*PI;
+		//float v = p.y*camHFoV + camAngle2;
+		float v = p.y*camHFoV;
+		float h = p.x*camHFoV + 0.5*PI;
+		vec3 res = vec3(-cos(h), v, -sin(h));
+		resDir = rot * res;
+	} else if (projMode == 3)  {
+		// Pannini
+		float l = 2.0 *  sin(0.5*camHFoV) / (cos(0.5*camHFoV) + panini_compression);
+		vec3 vViewVec = vec3(p.x*l, p.y*l, -1.0);
+
+		vec3 rayStartPos = vec3(0.0, 0.0, panini_compression);
+		vec3 rayDir = vViewVec;
+		vec3 rayDirP = vec3(rayDir.x, 0, rayDir.z);
+
+		float lm=intersectRayCylinder(1.0, rayStartPos, normalize(rayDirP));
+		if (lm > 0.0) {
+			vec3 res = rayStartPos + lm*rayDir/length(rayDirP);
+			resDir = rot*res;
+		} else {
+			resDir = vec3(1, 0, 0);
+		}
+	} else if (projMode == 4) {
+        // re-scale the final image for the Moebius projection method
+        {
+            float rho_compression;
+            //float phi_max_rad = 0.1*PI;
+            float phi_max_rad = (PI*(phiMax)/180.0);
+            if (camHFoV<=phi_max_rad){
+                    rho_compression = 1.0;
+            } else {
+                    rho_compression = phi_max_rad/camHFoV;
+            }
+            p.x *= rho_compression;
+            p.y *= rho_compression;
+
+        }
+
+        float l = 2.0*tan(0.5*camHFoV);
+        vec3 res = vec3(p.x*l, p.y*l , -1.0);
+		res = normalize(res);
+
+		// Stereographic projection
+		vec2 ster; 
+		ster.x = 2.0*res.x/(-res.z+1.0);
+		ster.y = 2.0*res.y/(-res.z+1.0);
+
+		// Moebius shrinking on the complex plane
+                float rho_compression;
+                float phi_max_rad = (PI*(phiMax)/180.0);
+                if (camHFoV<=phi_max_rad){
+                        rho_compression = 1.0;
+                } else {
+                        rho_compression = phi_max_rad/camHFoV;
+                }
+		ster.x /= rho_compression;
+		ster.y /= rho_compression;
+		
+		// map points back to the sphere
+                res.x = (4.0*ster.x)/(ster.x*ster.x+ster.y*ster.y+4.0);
+                res.y = (4.0*ster.y)/(ster.x*ster.x+ster.y*ster.y+4.0);
+                res.z = (ster.x*ster.x+ster.y*ster.y-4.0)/(ster.x*ster.x+ster.y*ster.y+4.0);
+
+		// rotate result
+		resDir = rot*res;
+	}
+
+	// from 3D lookup vector, now compute texture coordinate, as the texture is not a cube map but a 2D equirect. image
+
+	resDir = normalize(resDir);
+	vec2 ang;
+	ang.x = -atan(resDir.z, resDir.x)/(2.0*PI) + 0.5;
+	ang.y = acos(-resDir.y)/PI;
+
+	gl_FragColor=texture2D(tex, ang);
+	//gl_FragColor=vec4 ( ang, 0.0, 1.0);
+}
+
+		</script>
+
+		<video id="video" autoplay loop style="display:none">
+			<source src="http://alteredqualia.com/three/examples/textures/sintel.mp4" type='video/mp4; codecs="avc1.42E01E, mp4a.40.2"'>
+			<source src="http://alteredqualia.com/three/examples/textures/sintel.ogv" type='video/ogg; codecs="theora, vorbis"'>
+		</video>
+		
+		<script>
+		
+			var loader,
+				camera, 
+				scene, 
+				renderer,
+				uniforms,
+				attributes,
+				container,
+				mesh;
+				
+			var container = document.getElementById( 'container' );
+			var options = document.getElementById( 'options' );
+			var title = document.getElementById( 'title' );
+			
+			var fov = 70,
+			texture_placeholder,
+			isUserInteracting = false,
+			onMouseDownMouseX = 0, onMouseDownMouseY = 0,
+			lon = 0, onMouseDownLon = 0,
+			lat = 0, onMouseDownLat = 0,
+			phi = 0, theta = 0;
+
+			init();
+			animate(); // TODO: necessary?
+		
+			function showError( message ) {
+				errorDiv.innerHTML = message;
+			}
+			
+			function showMessage( message ) {
+				showError('');
+				messageDiv.innerHTML = message;
+			}
+			
+			function init() {
+
+				container = document.getElementById( 'container' );
+				
+				scene = new THREE.Scene();
+
+				camera = new THREE.PerspectiveCamera( fov, window.innerWidth / window.innerHeight, 1, 1100 );
+				camera.target = new THREE.Vector3( 0, 0, 0 );
+camera.position.z = 10; // TODO: necessary?
+
+				scene.add( camera );
+
+//				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer = new THREE.WebGLRenderer(  );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.sortObjects = false
+
+				container.appendChild( renderer.domElement );
+				
+				var shader = new THREE.ShaderMaterial( {
+					uniforms: {
+						resolution: { type: "v2", value: new THREE.Vector2(256, 256) },
+						//tex: { type: "t", value: THREE.ImageUtils.loadTexture( "placeholder.png" ) },
+						tex: { type: "t", value: null },
+						camAngle1: { type: "f", value: 0.0 }, // camera pitch and yaw
+						camAngle2: { type: "f", value: 0.0 },
+						camHFoV: { type: "f", value: 70*Math.PI/180 }, // horizontal field of view in radians
+						projMode: { type: "i", value: 1 }, // projection mode
+						phiMax: { type: "f", value: 60.0 } // phi Max used for Moebius projection
+					},
+					vertexShader: document.getElementById( 'vertexShader' ).textContent,
+					fragmentShader: document.getElementById( 'fragmentShader' ).textContent
+				} );
+				
+				uniforms = THREE.UniformsUtils.clone( shader.uniforms );
+				var material = new THREE.ShaderMaterial( {
+					fragmentShader: shader.fragmentShader,
+					vertexShader: shader.vertexShader,
+					uniforms: uniforms
+				} );
+
+
+				uniforms[ 'tex' ].value = THREE.ImageUtils.loadTexture( "placeholder.png" );
+				uniforms[ 'tex' ].value.needsUpdate = true;
+
+/////////////////////////////
+				video = document.getElementById( 'video' );
+video.preload = "auto";
+				texture = new THREE.Texture( video );
+				texture.minFilter = THREE.LinearFilter;
+				texture.magFilter = THREE.LinearFilter;
+				texture.generateMipmaps = false;
+
+				uniforms[ 'tex' ].value = texture;
+				uniforms[ 'tex' ].value.needsUpdate = true;
+//////////////////////////////
+
+
+
+				mesh = new THREE.Mesh( new THREE.PlaneGeometry( 2, 2 ), material );
+				scene.add( mesh );
+
+				container.addEventListener( 'mousedown', onMouseDown, false );
+				container.addEventListener( 'mousemove', onMouseMove, false );
+				container.addEventListener( 'mouseup', onMouseUp, false );
+				container.addEventListener( 'mousewheel', onMouseWheel, false );
+				container.addEventListener( 'DOMMouseScroll', onMouseWheel, false);
+				window.addEventListener( 'resize', onWindowResized, false );
+
+				onWindowResized( null );
+			
+				errorDiv = document.getElementById( 'error' );
+				messageDiv = document.getElementById( 'message' );
+			}
+			
+			
+			function onWindowResized( event ) {
+				uniforms.resolution.value.x = container.clientWidth;
+				uniforms.resolution.value.y = container.clientHeight;
+
+				renderer.setSize( container.clientWidth, container.clientHeight );
+				//camera.projectionMatrix.makePerspective( fov, container.clientWidth / container.clientHeight, camera.near, camera.far );
+			}
+
+			function onMouseDown( event ) {
+				options.style.opacity = 0;
+				options.style.pointerEvents = 'none';
+								
+				event.preventDefault();
+
+				isUserInteracting = true;
+
+				onPointerDownPointerX = event.clientX;
+				onPointerDownPointerY = event.clientY;
+
+				onPointerDownLon = lon;
+				onPointerDownLat = lat;
+			}
+
+			function onMouseMove( event ) {
+				var f = 0.0002*fov;
+
+				if ( isUserInteracting ) {
+					lon = ( event.clientX - onPointerDownPointerX ) * f + onPointerDownLon;
+					lat = ( event.clientY - onPointerDownPointerY ) * f + onPointerDownLat;
+					if (lat > Math.PI) lat -= 2*Math.PI;
+					if (lat <-Math.PI) lat += 2*Math.PI;
+					if (lon > Math.PI) lon -= 2*Math.PI;
+					if (lon <-Math.PI) lon += 2*Math.PI;
+					uniforms.camAngle1.value = -lon;
+					uniforms.camAngle2.value = lat;
+				}
+			}
+
+			function onMouseUp( event ) {
+				options.style.opacity = 1;
+				options.style.pointerEvents = 'auto';
+				
+				isUserInteracting = false;
+				
+			}
+
+			function onMouseWheel( event ) {
+				var wheelDelta = 0;
+
+				// WebKit
+				if ( event.wheelDeltaY ) {
+					wheelDelta = -event.wheelDeltaY * 0.05;
+				// Opera / Explorer 9
+				} else if ( event.wheelDelta ) {
+					wheelDelta = -event.wheelDelta * 0.05;
+				// Firefox
+				} else if ( event.detail ) {
+					wheelDelta = event.detail * 1.0;
+				}
+
+				fov *= Math.pow(1.06, wheelDelta);
+				if (fov < 5) fov = 5;
+				if (fov > 359.5) fov = 359.5;
+				if (uniforms.projMode.value == 0) {
+					if (fov > 172) fov = 172;
+				}
+				uniforms.camHFoV.value = fov*Math.PI/180;
+			}
+
+			function onChangeProjection() {
+				uniforms.projMode.value = document.getElementById("pan_projection").value;
+				if (uniforms.projMode.value == 5) { // stereographic
+					fov = 240;
+					uniforms.camHFoV.value = fov*Math.PI/180;
+					uniforms.camAngle1.value = 0;
+					uniforms.camAngle2.value = 0;
+				}
+				if (uniforms.projMode.value == 0) { // rectilinear
+					if (fov > 172) fov = 172;
+				}
+			}
+
+			function onUpdateMoebPhiMax(newValue) {
+				document.getElementById("range").innerHTML=newValue;
+				uniforms.phiMax.value=newValue;
+			}
+
+
+			function animate() {
+				requestAnimationFrame( animate );
+				render();
+			}
+
+			function render() {
+				if( !isUserInteracting ) {
+					//lon += .15;
+				}
+
+				if ( video.readyState === video.HAVE_ENOUGH_DATA ) {
+					if ( texture ) texture.needsUpdate = true;
+				}
+
+				renderer.render( scene, camera );
+			}
+
+		</script>
+	
+	</body>
+</html>
